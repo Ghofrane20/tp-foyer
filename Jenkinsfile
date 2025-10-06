@@ -2,8 +2,8 @@ pipeline {
     agent any
 
     tools {
-        maven 'Maven'     // Nom de l'installation Maven configurée dans Jenkins (Manage Jenkins > Global Tool Configuration)
-        jdk 'JDK11'       // Nom de l'installation JDK configurée dans Jenkins
+        maven 'M2_HOME'    // Nom exact de Maven dans Jenkins
+        jdk 'JAVA_HOME'    // Nom exact du JDK dans Jenkins
     }
 
     stages {
@@ -24,11 +24,11 @@ pipeline {
 
         stage('SonarQube Analysis') {
             environment {
-                // "sonar-token" doit être l'ID du credential que tu as créé dans Jenkins
+                // "sonar-token" doit être l'ID du credential créé dans Jenkins
                 SONARQUBE_TOKEN = credentials('sonar-token')
             }
             steps {
-                // "SonarQube" doit être le nom du serveur configuré dans Jenkins (Manage Jenkins > Configure System > SonarQube servers)
+                // "SonarQube" doit être le nom du serveur configuré dans Jenkins
                 withSonarQubeEnv('SonarQube') {
                     sh """
                         mvn sonar:sonar \
