@@ -1,17 +1,19 @@
 pipeline {
     agent any
 
+    tools {
+        maven 'M2_HOME'    // Nom exact de Maven configuré dans Jenkins
+        jdk 'JAVA_HOME'     // Nom exact du JDK configuré dans Jenkins
+    }
+
     environment {
         GIT_REPO_URL = 'https://github.com/Ghofrane20/tp-foyer.git'
-        SONARQUBE_SERVER = 'SonarQube'
-        SONARQUBE_TOKEN = credentials('sonar-token')
-        M2_HOME = tool 'Maven'
-        JAVA_HOME = tool 'JDK11'
-        PATH = "${JAVA_HOME}/bin:${M2_HOME}/bin:${env.PATH}"
+        SONARQUBE_SERVER = 'SonarQube'                // Nom du serveur SonarQube dans Jenkins
+        SONARQUBE_TOKEN = credentials('sonar-token')  // ID du token SonarQube (Credentials)
     }
 
     stages {
-        stage('Checkout Code') {
+        stage('Pull from Git') {
             steps {
                 echo '📥 Clonage du projet depuis GitHub...'
                 git branch: 'main', url: "${GIT_REPO_URL}"
@@ -21,14 +23,14 @@ pipeline {
         stage('Clean Project') {
             steps {
                 echo '🧹 Nettoyage du projet...'
-                sh "${M2_HOME}/bin/mvn clean"
+                sh 'mvn clean'
             }
         }
 
         stage('Compile Project') {
             steps {
                 echo '⚙️ Compilation du projet...'
-                sh "${M2_HOME}/bin/mvn compile"
+                sh 'mvn compile'
             }
         }
 
@@ -37,9 +39,9 @@ pipeline {
                 echo '🔍 Analyse du code avec SonarQube...'
                 withSonarQubeEnv("${SONARQUBE_SERVER}") {
                     sh """
-                        ${M2_HOME}/bin/mvn sonar:sonar \
+                        mvn sonar:sonar \
                         -Dsonar.projectKey=tp-foyer \
-                        -Dsonar.host.url=${SONAR_HOST_URL} \
+                        -Dsonar.host.url=${env.SONAR_HOST_URL} \
                         -Dsonar.login=${SONARQUBE_TOKEN}
                     """
                 }
@@ -49,13 +51,13 @@ pipeline {
         stage('Build JAR') {
             steps {
                 echo '📦 Génération du fichier JAR...'
-                sh "${M2_HOME}/bin/mvn package -DskipTests"
+                sh 'mvn package -DskipTests'
             }
         }
 
         stage('Archive Artifact') {
             steps {
-                echo '🗃️ Archivage du fichier JAR...'
+                echo '🗃️ Archivage du JAR généré...'
                 archiveArtifacts artifacts: 'target/*.jar', fingerprint: true
             }
         }
