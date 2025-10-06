@@ -20,8 +20,7 @@ pipeline {
  stage('Code Checkout') {
  steps {
  git branch: 'master',
- url: 'https://github.com/hwafa/atelier-jenkins.git',
- credentialsId: 'jenkins-example-github-pat'
+ url: 'https://github.com/Ghofrane20/tp-foyer.git'
  }
  }
  stage('Code Build') {
