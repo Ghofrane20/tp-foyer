@@ -32,8 +32,12 @@ pipeline {
                 script {
                     echo "Démarrage du conteneur MySQL..."
 
-                    // Supprime l'ancien conteneur si existant
+                    // Supprime l'ancien conteneur et volume si existants
                     sh "docker rm -f mysql-dev || true"
+                    sh "docker volume rm mysql-data || true"
+
+                    // Crée un volume pour MySQL
+                    sh "docker volume create mysql-data"
 
                     // Lance le conteneur MySQL
                     sh """
@@ -41,20 +45,18 @@ pipeline {
                       -e MYSQL_ROOT_PASSWORD=rootpass \
                       -e MYSQL_DATABASE=TPProjet \
                       -p 3307:3306 \
+                      -v mysql-data:/var/lib/mysql \
                       -d mysql:8 \
                       --default-authentication-plugin=mysql_native_password
                     """
 
                     echo "Attente que MySQL soit prêt..."
                     sh """
-                    for i in \$(seq 1 30); do
-                        if docker exec mysql-dev mysqladmin ping -uroot -prootpass --silent; then
-                            echo "MySQL prêt !"
-                            break
-                        fi
-                        echo "⏳ En attente de MySQL... (\$i/30)"
+                    until docker exec mysql-dev mysqladmin ping -uroot -prootpass --silent; do
+                        echo "⏳ En attente de MySQL..."
                         sleep 5
                     done
+                    echo "✅ MySQL prêt !"
                     """
 
                     // Vérification finale
@@ -132,11 +134,13 @@ pipeline {
             echo "Image: ${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG}"
             // Nettoyage des conteneurs
             sh "docker rm -f mysql-dev || true"
+            sh "docker volume rm mysql-data || true"
         }
         failure {
             echo '❌ Échec du pipeline. Consultez les logs Jenkins pour les détails.'
             // Nettoyage des conteneurs
             sh "docker rm -f mysql-dev || true"
+            sh "docker volume rm mysql-data || true"
         }
     }
 }
