@@ -32,14 +32,12 @@ pipeline {
                 script {
                     echo "Démarrage du conteneur MySQL..."
 
-                    // Supprime l'ancien conteneur et volume si existants
+                    // Nettoyage ancien conteneur et volume
                     sh "docker rm -f mysql-dev || true"
                     sh "docker volume rm mysql-data || true"
-
-                    // Crée un volume pour MySQL
                     sh "docker volume create mysql-data"
 
-                    // Lance le conteneur MySQL
+                    // Lancement du conteneur MySQL
                     sh """
                     docker run --name mysql-dev \
                       -e MYSQL_ROOT_PASSWORD=rootpass \
@@ -50,14 +48,26 @@ pipeline {
                       --default-authentication-plugin=mysql_native_password
                     """
 
-                    echo "Attente que MySQL soit prêt..."
-                    sh """
-                    until docker exec mysql-dev mysqladmin ping -uroot -prootpass --silent; do
-                        echo "⏳ En attente de MySQL..."
-                        sleep 5
-                    done
-                    echo "✅ MySQL prêt !"
-                    """
+                    // Attente que MySQL soit prêt avec timeout de 60 secondes
+                    def retries = 12
+                    def ready = false
+                    for (int i = 0; i < retries; i++) {
+                        def status = sh(script: "docker exec mysql-dev mysqladmin ping -uroot -prootpass --silent || echo 'false'", returnStdout: true).trim()
+                        if (status == "mysqld is alive") {
+                            ready = true
+                            echo "✅ MySQL prêt !"
+                            break
+                        } else {
+                            echo "⏳ En attente de MySQL (${i+1}/${retries})..."
+                            sleep 5
+                        }
+                    }
+
+                    if (!ready) {
+                        echo "❌ MySQL n'a pas démarré après ${retries*5} secondes."
+                        sh "docker logs mysql-dev || true"
+                        error("Impossible de continuer, MySQL n'est pas opérationnel")
+                    }
 
                     // Vérification finale
                     sh "docker exec mysql-dev mysql -uroot -prootpass -e 'SHOW DATABASES;'"
@@ -129,18 +139,17 @@ pipeline {
     }
 
     post {
-        success {
-            echo '✅ Pipeline terminé avec succès — Image poussée sur Docker Hub !'
-            echo "Image: ${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG}"
-            // Nettoyage des conteneurs
+        always {
+            echo "Nettoyage des conteneurs et volumes Docker..."
             sh "docker rm -f mysql-dev || true"
             sh "docker volume rm mysql-data || true"
         }
+        success {
+            echo '✅ Pipeline terminé avec succès — Image poussée sur Docker Hub !'
+            echo "Image: ${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG}"
+        }
         failure {
             echo '❌ Échec du pipeline. Consultez les logs Jenkins pour les détails.'
-            // Nettoyage des conteneurs
-            sh "docker rm -f mysql-dev || true"
-            sh "docker volume rm mysql-data || true"
         }
     }
 }
