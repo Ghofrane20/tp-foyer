@@ -12,7 +12,7 @@ pipeline {
 
         // Docker
         DOCKER_IMAGE_NAME = "ghofranejomni/tp-foyer"
-        DOCKER_IMAGE_TAG = "${env.BUILD_ID}"
+        DOCKER_IMAGE_TAG  = "${env.BUILD_ID}"
 
         // Application
         APP_PORT = "8089"
@@ -31,7 +31,7 @@ pipeline {
             steps {
                 script {
                     echo "Démarrage du conteneur MySQL..."
-                    
+
                     // Supprime l'ancien conteneur si existant
                     sh "docker rm -f mysql-dev || true"
 
@@ -46,6 +46,7 @@ pipeline {
                     """
 
                     echo "Attente que MySQL soit prêt..."
+                    sh """
                     for i in \$(seq 1 30); do
                         if docker exec mysql-dev mysqladmin ping -uroot -prootpass --silent; then
                             echo "MySQL prêt !"
@@ -54,6 +55,7 @@ pipeline {
                         echo "⏳ En attente de MySQL... (\$i/30)"
                         sleep 5
                     done
+                    """
 
                     // Vérification finale
                     sh "docker exec mysql-dev mysql -uroot -prootpass -e 'SHOW DATABASES;'"
@@ -128,12 +130,12 @@ pipeline {
         success {
             echo '✅ Pipeline terminé avec succès — Image poussée sur Docker Hub !'
             echo "Image: ${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG}"
+            // Nettoyage des conteneurs
+            sh "docker rm -f mysql-dev || true"
         }
         failure {
             echo '❌ Échec du pipeline. Consultez les logs Jenkins pour les détails.'
-        }
-        always {
-            echo 'Nettoyage des conteneurs Docker...'
+            // Nettoyage des conteneurs
             sh "docker rm -f mysql-dev || true"
         }
     }
