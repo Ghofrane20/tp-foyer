@@ -9,7 +9,7 @@ pipeline {
     environment {
         GIT_REPO_URL = 'https://github.com/Ghofrane20/tp-foyer.git'
         SONARQUBE_SERVER = 'SonarQube'                // Nom du serveur SonarQube dans Jenkins
-        SONARQUBE_TOKEN = credentials('sonar-token')  // ID du token SonarQube (Credentials)
+        SONARQUBE_TOKEN = credentials('sonar-token')  // ID du token SonarQube (Secret Text)
     }
 
     stages {
@@ -44,6 +44,7 @@ pipeline {
                         -Dsonar.host.url=${env.SONAR_HOST_URL} \
                         -Dsonar.login=${SONARQUBE_TOKEN}
                     """
+                    echo "🔗 Résultats SonarQube : ${env.SONAR_HOST_URL}/dashboard?id=tp-foyer"
                 }
             }
         }
