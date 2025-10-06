@@ -27,10 +27,43 @@ pipeline {
             }
         }
 
+        stage('Start MySQL') {
+            steps {
+                script {
+                    echo "Démarrage du conteneur MySQL..."
+                    
+                    // Supprime l'ancien conteneur si existant
+                    sh "docker rm -f mysql-dev || true"
+
+                    // Lance le conteneur MySQL
+                    sh """
+                    docker run --name mysql-dev \
+                      -e MYSQL_ROOT_PASSWORD=rootpass \
+                      -e MYSQL_DATABASE=TPProjet \
+                      -p 3307:3306 \
+                      -d mysql:8 \
+                      --default-authentication-plugin=mysql_native_password
+                    """
+
+                    echo "Attente que MySQL soit prêt..."
+                    for i in \$(seq 1 30); do
+                        if docker exec mysql-dev mysqladmin ping -uroot -prootpass --silent; then
+                            echo "MySQL prêt !"
+                            break
+                        fi
+                        echo "⏳ En attente de MySQL... (\$i/30)"
+                        sleep 5
+                    done
+
+                    // Vérification finale
+                    sh "docker exec mysql-dev mysql -uroot -prootpass -e 'SHOW DATABASES;'"
+                }
+            }
+        }
+
         stage('Build and Test') {
             steps {
                 echo 'Construction et tests du projet...'
-                // Les tests utiliseront une base H2 en mémoire pour les tests
                 sh 'mvn clean compile test'
             }
         }
@@ -62,7 +95,6 @@ pipeline {
             steps {
                 script {
                     echo "Construction de l'image Docker..."
-                    
                     sh """
                         docker build -t ${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG} .
                         docker tag ${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG} ${DOCKER_IMAGE_NAME}:latest
@@ -99,6 +131,10 @@ pipeline {
         }
         failure {
             echo '❌ Échec du pipeline. Consultez les logs Jenkins pour les détails.'
+        }
+        always {
+            echo 'Nettoyage des conteneurs Docker...'
+            sh "docker rm -f mysql-dev || true"
         }
     }
 }
