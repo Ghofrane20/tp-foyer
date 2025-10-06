@@ -7,9 +7,14 @@ pipeline {
     }
 
     environment {
+        // SonarQube
         SONARQUBE_TOKEN = credentials('sonar-token')
+
+        // Docker
         DOCKER_IMAGE_NAME = "ghofranejomni/tp-foyer"
         DOCKER_IMAGE_TAG  = "${env.BUILD_ID}"
+
+        // Application
         APP_PORT = "8089"
     }
 
@@ -17,62 +22,70 @@ pipeline {
         stage('Checkout') {
             steps {
                 echo 'Récupération du code source depuis GitHub...'
-                git branch: 'main', url: 'https://github.com/Ghofrane20/tp-foyer.git'
+                git branch: 'main',
+                    url: 'https://github.com/Ghofrane20/tp-foyer.git'
             }
         }
 
         stage('Start MySQL') {
             steps {
                 script {
-                    def maxAttempts = 3
-                    def attempt = 0
-                    def mysqlReady = false
+                    echo "Démarrage du conteneur MySQL..."
 
-                    while (attempt < maxAttempts && !mysqlReady) {
-                        attempt++
-                        echo "🔄 Tentative ${attempt} de démarrage de MySQL..."
+                    // Nettoyage ancien conteneur et volume
+                    sh "docker rm -f mysql-dev || true"
+                    sh "docker volume rm mysql-data || true"
+                    sh "docker volume create mysql-data"
 
-                        // Supprime ancien conteneur et volume
-                        sh "docker rm -f mysql-dev || true"
-                        sh "docker volume rm mysql-data || true"
-                        sh "docker volume create mysql-data"
+                    // Lancement du conteneur MySQL avec ulimits augmentés
+                    sh """
+                    docker run --name mysql-dev \
+                      -e MYSQL_ROOT_PASSWORD=rootpass \
+                      -e MYSQL_DATABASE=TPProjet \
+                      -p 3307:3306 \
+                      -v mysql-data:/var/lib/mysql \
+                      --ulimit nofile=262144:262144 \
+                      -d mysql:8 \
+                      --default-authentication-plugin=mysql_native_password
+                    """
 
-                        // Lancement du conteneur MySQL avec auto-restart
-                        sh """
-                        docker run --name mysql-dev \
-                          -e MYSQL_ROOT_PASSWORD=rootpass \
-                          -e MYSQL_DATABASE=TPProjet \
-                          -p 3307:3306 \
-                          -v mysql-data:/var/lib/mysql \
-                          --restart unless-stopped \
-                          -d mysql:8 \
-                          --default-authentication-plugin=mysql_native_password
-                        """
+                    // Attendre quelques secondes pour le démarrage initial
+                    echo "Attente initiale de 10 secondes..."
+                    sleep 10
 
-                        // Attente que MySQL soit prêt
-                        def retries = 24  // 24*5s = 120s max
-                        for (int i = 0; i < retries; i++) {
-                            def status = sh(script: "docker exec mysql-dev mysqladmin ping -uroot -prootpass --silent || echo 'false'", returnStdout: true).trim()
-                            if (status == "mysqld is alive") {
-                                mysqlReady = true
+                    // Vérification des logs Docker
+                    sh "docker logs mysql-dev"
+
+                    // Attente que MySQL soit prêt avec timeout prolongé
+                    def retries = 20
+                    def ready = false
+                    for (int i = 0; i < retries; i++) {
+                        try {
+                            def exitCode = sh(
+                                script: "docker exec mysql-dev mysqladmin ping -uroot -prootpass --silent",
+                                returnStatus: true
+                            )
+                            if (exitCode == 0) {
+                                ready = true
                                 echo "✅ MySQL prêt !"
                                 break
-                            } else {
-                                echo "⏳ En attente de MySQL (${i+1}/${retries})..."
-                                sleep 5
                             }
+                        } catch (Exception e) {
+                            echo "⏳ En attente de MySQL (${i+1}/${retries})..."
                         }
-
-                        if (!mysqlReady) {
-                            echo "⚠️ MySQL n'a pas démarré correctement à cette tentative."
-                            sh "docker logs mysql-dev || true"
-                        }
+                        sleep 5
                     }
 
-                    if (!mysqlReady) {
-                        error("❌ Impossible de démarrer MySQL après ${maxAttempts} tentatives.")
+                    if (!ready) {
+                        echo "❌ MySQL n'a pas démarré après ${retries*5} secondes."
+                        echo "Logs MySQL:"
+                        sh "docker logs mysql-dev || true"
+                        echo "État du conteneur:"
+                        sh "docker ps -a | grep mysql-dev || true"
+                        error("Impossible de continuer, MySQL n'est pas opérationnel")
                     }
 
+                    // Vérification finale
                     sh "docker exec mysql-dev mysql -uroot -prootpass -e 'SHOW DATABASES;'"
                 }
             }
@@ -108,6 +121,13 @@ pipeline {
             }
         }
 
+        stage('Package Application') {
+            steps {
+                echo 'Packaging de l\'application...'
+                sh 'mvn package -DskipTests'
+            }
+        }
+
         stage('Build Docker Image') {
             steps {
                 script {
@@ -124,7 +144,11 @@ pipeline {
             steps {
                 script {
                     echo "Connexion à Docker Hub et push..."
-                    withCredentials([usernamePassword(credentialsId: 'dockerhub-creds', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+                    withCredentials([usernamePassword(
+                        credentialsId: 'dockerhub-creds', 
+                        usernameVariable: 'DOCKER_USER', 
+                        passwordVariable: 'DOCKER_PASS'
+                    )]) {
                         sh """
                             echo \$DOCKER_PASS | docker login -u \$DOCKER_USER --password-stdin
                             docker push ${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG}
@@ -146,6 +170,7 @@ pipeline {
         success {
             echo '✅ Pipeline terminé avec succès — Image poussée sur Docker Hub !'
             echo "Image: ${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG}"
+            echo "Disponible sur: https://hub.docker.com/r/${DOCKER_IMAGE_NAME}"
         }
         failure {
             echo '❌ Échec du pipeline. Consultez les logs Jenkins pour les détails.'
